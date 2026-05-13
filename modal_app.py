@@ -8,7 +8,7 @@ IMAGE_NAME = os.environ.get("COMFYUI_IMAGE", "anqipudding/modal_comfyui:latest")
 GPU_TYPE = os.environ.get("MODAL_GPU", "A10")
 
 app = modal.App("modal-comfyui")
-image = modal.Image.from_registry(IMAGE_NAME)
+image = modal.Image.from_registry(IMAGE_NAME, force_build=True)
 data = modal.Volume.from_name("modal-comfyui-data", create_if_missing=True)
 
 
