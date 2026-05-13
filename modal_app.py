@@ -17,7 +17,8 @@ data = modal.Volume.from_name("modal-comfyui-data", create_if_missing=True)
     gpu=GPU_TYPE,
     volumes={"/data": data},
     timeout=24 * 60 * 60,
-    scaledown_window=20 * 60,
+    max_containers=1,
+    scaledown_window=5 * 60,
 )
 @modal.web_server(8188, startup_timeout=180, label="comfyui")
 def comfyui():
@@ -26,10 +27,10 @@ def comfyui():
 
 @app.function(
     image=image,
-    gpu=GPU_TYPE,
     volumes={"/data": data},
     timeout=24 * 60 * 60,
-    scaledown_window=20 * 60,
+    max_containers=1,
+    scaledown_window=5 * 60,
 )
 @modal.web_server(8888, startup_timeout=180, label="jupyter")
 def jupyter():
