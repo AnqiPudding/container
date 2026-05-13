@@ -1,0 +1,45 @@
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    COMFYUI_DIR=/workspace/ComfyUI \
+    DATA_DIR=/data
+
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    aria2 \
+    ca-certificates \
+    ffmpeg \
+    git \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    rsync \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_DIR}"
+
+WORKDIR ${COMFYUI_DIR}
+
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && pip install -r requirements.txt \
+    && pip install jupyterlab ipywidgets
+
+COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
+COPY ComfyUI-Civitai-Downloader/ ${COMFYUI_DIR}/custom_nodes/ComfyUI-Civitai-Downloader/
+
+RUN if [ -f custom_nodes/comfyui-manager/requirements.txt ]; then pip install -r custom_nodes/comfyui-manager/requirements.txt; fi \
+    && if [ -f custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt ]; then pip install -r custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt; fi \
+    && find custom_nodes -type d -name "__pycache__" -prune -exec rm -rf {} +
+
+COPY scripts/ /opt/comfyui-scripts/
+RUN chmod +x /opt/comfyui-scripts/*.sh
+
+EXPOSE 8188 8888
+
+CMD ["/opt/comfyui-scripts/start-comfyui.sh"]
