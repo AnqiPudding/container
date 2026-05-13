@@ -63,7 +63,7 @@ modal deploy modal_app.py
 This creates two Modal web endpoints:
 
 - `comfyui`: ComfyUI on port `8188`
-- `jupyter`: JupyterLab on port `8888`
+- `jupyter`: JupyterLab on port `8888`; open `/lab?token=modal-comfyui`
 
 Both endpoints use the same persistent Modal Volume named `modal-comfyui-data`, mounted at `/data`. ComfyUI `models`, `input`, `output`, and `user` directories are symlinked into that volume so files survive container restarts.
 
