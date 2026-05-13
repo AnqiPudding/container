@@ -35,6 +35,9 @@ COPY ComfyUI-Civitai-Downloader/ ${COMFYUI_DIR}/custom_nodes/ComfyUI-Civitai-Dow
 
 RUN if [ -f custom_nodes/comfyui-manager/requirements.txt ]; then pip install -r custom_nodes/comfyui-manager/requirements.txt; fi \
     && if [ -f custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt ]; then pip install -r custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt; fi \
+    && for file in custom-node-list.json extension-node-map.json model-list.json alter-list.json github-stats.json; do \
+        wget -q -O "custom_nodes/comfyui-manager/${file}" "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/${file}"; \
+    done \
     && find custom_nodes -type d -name "__pycache__" -prune -exec rm -rf {} +
 
 COPY scripts/ /opt/comfyui-scripts/
