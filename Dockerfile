@@ -1,20 +1,24 @@
-FROM pytorch/pytorch:2.11.0-cuda13.0-cudnn9-runtime
+FROM python:3.13-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     COMFYUI_DIR=/workspace/ComfyUI \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 
 WORKDIR /workspace
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     aria2 \
+    build-essential \
     ca-certificates \
+    cmake \
     ffmpeg \
     git \
     libgl1 \
     libglib2.0-0 \
+    libgomp1 \
     libsm6 \
     libxext6 \
     libxrender1 \
@@ -34,7 +38,15 @@ if sys.version_info[:2] != (3, 13):
 PY
 
 RUN python -m pip install --upgrade pip setuptools wheel \
-    && pip install -r requirements.txt \
+    && pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url "${PYTORCH_INDEX_URL}" \
+    && python - <<'PY'
+import torch
+
+if torch.version.cuda != "13.0":
+    raise SystemExit(f"Expected PyTorch CUDA 13.0, got {torch.version.cuda}")
+PY
+
+RUN pip install -r requirements.txt \
     && pip install jupyterlab ipywidgets
 
 COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
