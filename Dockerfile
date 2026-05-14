@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_DIR}"
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_DIR}"
 
 WORKDIR ${COMFYUI_DIR}
 
