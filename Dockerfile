@@ -47,7 +47,16 @@ if torch.version.cuda != "13.0":
 PY
 
 RUN pip install -r requirements.txt \
-    && pip install jupyterlab ipywidgets
+    && pip install \
+        "diffusers>=0.33.1" \
+        "peft>=0.17.0" \
+        "rotary_embedding_torch>=0.5.3" \
+        "omegaconf>=2.3.0" \
+        opencv-python \
+        gguf \
+        matplotlib \
+        jupyterlab \
+        ipywidgets
 
 COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
 COPY ComfyUI-Civitai-Downloader/ ${COMFYUI_DIR}/custom_nodes/ComfyUI-Civitai-Downloader/

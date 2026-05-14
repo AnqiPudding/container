@@ -40,6 +40,7 @@ rm -rf "${COMFYUI_DIR}/custom_nodes/.ipynb_checkpoints" "${COMFYUI_DIR}/custom_n
 
 for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
   if [ -f "${req}" ]; then
+    echo "Installing custom node requirements: ${req}"
     pip install -r "${req}"
   fi
 done
