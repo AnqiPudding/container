@@ -45,5 +45,7 @@ for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
   fi
 done
 
+pip install "transformers<5"
+
 cd "${COMFYUI_DIR}"
 exec python main.py --listen 0.0.0.0 --port "${COMFYUI_PORT:-8188}"

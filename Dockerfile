@@ -48,6 +48,7 @@ PY
 
 RUN pip install -r requirements.txt \
     && pip install \
+        "transformers<5" \
         "diffusers>=0.33.1" \
         "peft>=0.17.0" \
         "rotary_embedding_torch>=0.5.3" \
