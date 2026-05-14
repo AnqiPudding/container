@@ -36,5 +36,13 @@ fi
 mkdir -p "${DATA_DIR}/workflows" "${COMFYUI_DIR}/user/default"
 ln -sfn "${DATA_DIR}/workflows" "${DATA_DIR}/user/default/workflows"
 
+rm -rf "${COMFYUI_DIR}/custom_nodes/.ipynb_checkpoints" "${COMFYUI_DIR}/custom_nodes/custom_nodes"
+
+for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
+  if [ -f "${req}" ]; then
+    pip install -r "${req}"
+  fi
+done
+
 cd "${COMFYUI_DIR}"
 exec python main.py --listen 0.0.0.0 --port "${COMFYUI_PORT:-8188}"
