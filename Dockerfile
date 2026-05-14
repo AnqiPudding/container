@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda13.0-cudnn9-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -25,6 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_DIR}"
 
 WORKDIR ${COMFYUI_DIR}
+
+RUN python - <<'PY'
+import sys
+
+if sys.version_info[:2] != (3, 13):
+    raise SystemExit(f"Expected Python 3.13, got {sys.version}")
+PY
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install -r requirements.txt \

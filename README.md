@@ -65,7 +65,7 @@ This creates two Modal web endpoints:
 - `comfyui`: ComfyUI on port `8188`
 - `jupyter`: JupyterLab on port `8888`; open `/lab?token=modal-comfyui`
 
-Both endpoints use the same persistent Modal Volume named `modal-comfyui-data`, mounted at `/data`. ComfyUI `models`, `input`, `output`, and `user` directories are symlinked into that volume so files survive container restarts.
+Both endpoints use the same persistent Modal Volume named `modal-comfyui-data`, mounted at `/data`. ComfyUI `models`, `input`, `output`, `user`, `custom_nodes`, and workflows are symlinked into that volume so files survive container restarts.
 
 You can change the Modal GPU without editing code:
 
