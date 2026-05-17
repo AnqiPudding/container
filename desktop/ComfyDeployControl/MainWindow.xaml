@@ -319,7 +319,7 @@
                     <TabItem Header="ComfyUI logs">
                         <DockPanel Background="#101521" Margin="14">
                             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
-                                <Button Style="{StaticResource SoftButton}" Content="Start ComfyUI stderr" Click="StartComfyLogs_Click"/>
+                                <Button Style="{StaticResource SoftButton}" Content="Start ComfyUI logs" Click="StartComfyLogs_Click"/>
                                 <Button Style="{StaticResource SoftButton}" Content="Stop logs" Click="StopLogs_Click"/>
                             </StackPanel>
                             <TextBox x:Name="ComfyLogBox" Background="#0A0D14" Foreground="#F9E8C9" FontFamily="Consolas"

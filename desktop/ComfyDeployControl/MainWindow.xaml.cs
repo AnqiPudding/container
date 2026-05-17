@@ -18,7 +18,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _watchTimer = new() { Interval = TimeSpan.FromSeconds(45) };
     private readonly HttpClient _http = new();
     private PipelineSettings _settings = new();
-    private CancellationTokenSource? _logCts;
+    private CancellationTokenSource? _modalLogCts;
+    private CancellationTokenSource? _comfyLogCts;
     private bool _busy;
     private string _lastNodeFingerprint = "";
 
@@ -42,7 +43,8 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         _watchTimer.Stop();
-        _logCts?.Cancel();
+        _modalLogCts?.Cancel();
+        _comfyLogCts?.Cancel();
     }
 
     private void ApplySettingsToUi()
@@ -149,20 +151,22 @@ public partial class MainWindow : Window
         await RefreshBuildHistoryAsync();
     }
 
-    private async void StartAppLogs_Click(object sender, RoutedEventArgs e)
+    private void StartAppLogs_Click(object sender, RoutedEventArgs e)
     {
-        await StartLogStreamAsync(ModalLogBox, $"app logs {_settings.ModalAppName} -f --timestamps");
+        StartLogStream(ModalLogBox, ref _modalLogCts, $"app logs {_settings.ModalAppName} -f --timestamps", "Modal app logs");
     }
 
-    private async void StartComfyLogs_Click(object sender, RoutedEventArgs e)
+    private void StartComfyLogs_Click(object sender, RoutedEventArgs e)
     {
-        await StartLogStreamAsync(ComfyLogBox, $"app logs {_settings.ModalAppName} -f --timestamps --source stderr");
+        StartLogStream(ComfyLogBox, ref _comfyLogCts, $"app logs {_settings.ModalAppName} -f --timestamps", "ComfyUI logs");
     }
 
     private void StopLogs_Click(object sender, RoutedEventArgs e)
     {
-        _logCts?.Cancel();
-        _logCts = null;
+        _modalLogCts?.Cancel();
+        _modalLogCts = null;
+        _comfyLogCts?.Cancel();
+        _comfyLogCts = null;
         SetStatus("Logs stopped");
     }
 
@@ -473,27 +477,35 @@ public partial class MainWindow : Window
         BuildHistoryBox.Text = code == 0 ? PrettyJson(buffer.ToString()) : buffer.ToString();
     }
 
-    private async Task StartLogStreamAsync(TextBox target, string modalArgs)
+    private void StartLogStream(TextBox target, ref CancellationTokenSource? streamCts, string modalArgs, string streamName)
     {
-        _logCts?.Cancel();
-        _logCts = new CancellationTokenSource();
+        PullSettingsFromUi();
+        streamCts?.Cancel();
+        streamCts = new CancellationTokenSource();
+        var token = streamCts.Token;
         target.Clear();
-        SetStatus("Streaming logs");
+        Append(target, $"Starting {streamName}...");
+        SetStatus($"Streaming {streamName}");
 
-        try
+        _ = Task.Run(async () =>
         {
-            await RunAsync("modal", modalArgs, _settings.LocalRepoPath, line => Append(target, line), _logCts.Token, allowFailure: true);
-        }
-        catch (OperationCanceledException)
-        {
-            Append(target, "Log stream stopped.");
-        }
-        catch (Exception ex)
-        {
-            App.WriteCrashLog(ex);
-            Append(target, "Log stream error: " + ex.Message);
-            SetStatus("Log error");
-        }
+            try
+            {
+                var exitCode = await RunAsync("modal", modalArgs, _settings.LocalRepoPath, line => Append(target, line), token, quiet: true, allowFailure: true);
+                if (!token.IsCancellationRequested)
+                    Append(target, $"{streamName} ended with exit code {exitCode}.");
+            }
+            catch (OperationCanceledException)
+            {
+                Append(target, $"{streamName} stopped.");
+            }
+            catch (Exception ex)
+            {
+                App.WriteCrashLog(ex);
+                Append(target, $"{streamName} error: {ex.Message}");
+                SetStatus("Log error");
+            }
+        });
     }
 
     private async Task OpenModalUrlAsync(string label, string suffix)
