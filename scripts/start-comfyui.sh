@@ -93,7 +93,33 @@ initialize_comfyui() {
     fi
   done
 
+  repair_diversityboost_video_hook
+
   pip install "transformers<5"
+  pip install "decorator>=5.1.0"
+}
+
+repair_diversityboost_video_hook() {
+  local core_file="${COMFYUI_DIR}/custom_nodes/comfyui-diversityboost/core.py"
+
+  if [ ! -f "${core_file}" ]; then
+    return 0
+  fi
+
+  python - "${core_file}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+old = "coeffs = torch.randn(B, n_modes, device=device, dtype=torch.float32)"
+new = "coeffs = torch.randn(raw_pred.shape[0], n_modes, device=device, dtype=torch.float32)"
+
+if old in text:
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    print(f"Patched DiversityBoost video batch handling: {path}")
+PY
 }
 
 initialize_comfyui
