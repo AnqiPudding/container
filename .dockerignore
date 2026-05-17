@@ -19,3 +19,7 @@ env/
 /notebooks/
 desktop/**/bin/
 desktop/**/obj/
+control_web/frontend/node_modules/
+control_web/frontend/dist/
+control_web/frontend/*.tsbuildinfo
+control_web/backend/__pycache__/

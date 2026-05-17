@@ -61,6 +61,7 @@ RUN pip install -r requirements.txt \
 
 COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
 COPY ComfyUI-Civitai-Downloader/ ${COMFYUI_DIR}/custom_nodes/ComfyUI-Civitai-Downloader/
+COPY comfyui_runtime_overlay/ ${COMFYUI_DIR}/
 COPY custom_nodes_runtime/ ${COMFYUI_DIR}/custom_nodes/
 
 RUN for req in custom_nodes/*/requirements.txt; do \

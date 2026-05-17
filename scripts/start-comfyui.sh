@@ -9,7 +9,10 @@ COMFYUI_SESSION_PREFIX="${COMFYUI_SESSION_PREFIX:-/tmp/comfyui-manager-session}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT="${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT:-0}"
 CUSTOM_NODE_STAGING_DIR="${CUSTOM_NODE_STAGING_DIR:-${DATA_DIR}/custom_nodes_pending}"
+RUNTIME_OVERLAY_STAGING_DIR="${RUNTIME_OVERLAY_STAGING_DIR:-${DATA_DIR}/comfyui_overlay_pending}"
 RUNTIME_REQUIREMENTS_MARKER_DIR="${RUNTIME_REQUIREMENTS_MARKER_DIR:-/tmp/comfyui-custom-node-requirements}"
+CUSTOM_NODE_SETTLE_ATTEMPTS="${CUSTOM_NODE_SETTLE_ATTEMPTS:-10}"
+CUSTOM_NODE_SETTLE_SECONDS="${CUSTOM_NODE_SETTLE_SECONDS:-2}"
 
 child_pid=""
 stop_requested=0
@@ -70,6 +73,20 @@ initialize_comfyui() {
     install_custom_node_requirements "pending custom nodes"
   fi
 
+  if [ -d "${RUNTIME_OVERLAY_STAGING_DIR}" ]; then
+    echo "Applying pending ComfyUI runtime overlay from ${RUNTIME_OVERLAY_STAGING_DIR}."
+    rsync -a \
+      --exclude "/.git/" \
+      --exclude "/custom_nodes/" \
+      --exclude "/models/" \
+      --exclude "/input/" \
+      --exclude "/output/" \
+      --exclude "/temp/" \
+      --exclude "/notebooks/" \
+      --exclude "/user/default/workflows/" \
+      "${RUNTIME_OVERLAY_STAGING_DIR}/" "${COMFYUI_DIR}/"
+  fi
+
   for name in models input output user; do
     mkdir -p "${DATA_DIR}/${name}"
     if [ -d "${COMFYUI_DIR}/${name}" ] && [ ! -L "${COMFYUI_DIR}/${name}" ]; then
@@ -123,6 +140,39 @@ stage_runtime_custom_nodes() {
     --exclude "*.pyc" \
     --exclude ".ipynb_checkpoints/" \
     "${COMFYUI_DIR}/custom_nodes/" "${CUSTOM_NODE_STAGING_DIR}/"
+}
+
+custom_nodes_fingerprint() {
+  if [ ! -d "${COMFYUI_DIR}/custom_nodes" ]; then
+    echo "missing"
+    return 0
+  fi
+
+  find "${COMFYUI_DIR}/custom_nodes" -xdev \
+    -path "*/__pycache__" -prune -o \
+    -path "*/.git" -prune -o \
+    -type f -printf "%P %s %T@\n" 2>/dev/null | sort | sha256sum | awk '{print $1}'
+}
+
+wait_for_custom_nodes_to_settle() {
+  local previous=""
+  local current=""
+  local attempt=1
+
+  while [ "${attempt}" -le "${CUSTOM_NODE_SETTLE_ATTEMPTS}" ]; do
+    current="$(custom_nodes_fingerprint)"
+    if [ -n "${previous}" ] && [ "${current}" = "${previous}" ]; then
+      echo "Custom node files are stable."
+      return 0
+    fi
+
+    previous="${current}"
+    echo "Waiting for custom node file changes to settle (${attempt}/${CUSTOM_NODE_SETTLE_ATTEMPTS})."
+    sleep "${CUSTOM_NODE_SETTLE_SECONDS}"
+    attempt=$((attempt + 1))
+  done
+
+  echo "Custom node files did not fully settle; continuing with latest complete snapshot."
 }
 
 install_custom_node_requirements() {
@@ -287,7 +337,8 @@ while [ "${stop_requested}" -eq 0 ]; do
   fi
 
   if [ -f "${COMFYUI_SESSION_PREFIX}.reboot" ]; then
-    stage_runtime_custom_nodes
+    wait_for_custom_nodes_to_settle
+    /opt/comfyui-scripts/snapshot-comfyui-state.sh
     remove_incomplete_custom_node_dirs "${COMFYUI_DIR}/custom_nodes"
     install_custom_node_requirements "ComfyUI-Manager restart"
     stage_runtime_custom_nodes
