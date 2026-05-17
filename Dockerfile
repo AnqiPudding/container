@@ -61,9 +61,12 @@ RUN pip install -r requirements.txt \
 
 COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
 COPY ComfyUI-Civitai-Downloader/ ${COMFYUI_DIR}/custom_nodes/ComfyUI-Civitai-Downloader/
+COPY custom_nodes_runtime/ ${COMFYUI_DIR}/custom_nodes/
 
-RUN if [ -f custom_nodes/comfyui-manager/requirements.txt ]; then pip install -r custom_nodes/comfyui-manager/requirements.txt; fi \
-    && if [ -f custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt ]; then pip install -r custom_nodes/ComfyUI-Civitai-Downloader/requirements.txt; fi \
+RUN for req in custom_nodes/*/requirements.txt; do \
+        if [ -f "${req}" ]; then pip install --no-warn-conflicts -r "${req}"; fi; \
+    done \
+    && pip install --no-warn-conflicts "decorator>=5.1.0" \
     && for file in custom-node-list.json extension-node-map.json model-list.json alter-list.json github-stats.json; do \
         wget -q -O "custom_nodes/comfyui-manager/${file}" "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/${file}"; \
     done \

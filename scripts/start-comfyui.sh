@@ -2,11 +2,12 @@
 set -Eeuo pipefail
 
 IMAGE_COMFYUI_DIR="${COMFYUI_DIR:-/workspace/ComfyUI}"
-COMFYUI_DIR="${RUNTIME_COMFYUI_DIR:-/data/ComfyUI}"
+COMFYUI_DIR="${RUNTIME_COMFYUI_DIR:-/tmp/ComfyUI}"
 DATA_DIR="${DATA_DIR:-/data}"
 COMFYUI_REPO_URL="${COMFYUI_REPO_URL:-https://github.com/comfyanonymous/ComfyUI.git}"
 COMFYUI_SESSION_PREFIX="${COMFYUI_SESSION_PREFIX:-/tmp/comfyui-manager-session}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
+INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT="${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT:-0}"
 
 child_pid=""
 stop_requested=0
@@ -60,20 +61,20 @@ initialize_comfyui() {
     fi
   fi
 
-  rsync -a --ignore-existing "${IMAGE_COMFYUI_DIR}/custom_nodes/" "${COMFYUI_DIR}/custom_nodes/"
+  rsync -a --delete "${IMAGE_COMFYUI_DIR}/custom_nodes/" "${COMFYUI_DIR}/custom_nodes/"
 
-  for name in models input output user custom_nodes; do
-    if [ -d "${DATA_DIR}/${name}" ] && [ ! -L "${DATA_DIR}/${name}" ]; then
-      mkdir -p "${COMFYUI_DIR}/${name}"
-      rsync -a --ignore-existing "${DATA_DIR}/${name}/" "${COMFYUI_DIR}/${name}/"
+  for name in models input output user; do
+    mkdir -p "${DATA_DIR}/${name}"
+    if [ -d "${COMFYUI_DIR}/${name}" ] && [ ! -L "${COMFYUI_DIR}/${name}" ]; then
+      rsync -a --ignore-existing "${COMFYUI_DIR}/${name}/" "${DATA_DIR}/${name}/"
+      rm -rf "${COMFYUI_DIR:?}/${name}"
     fi
+    ln -sfn "${DATA_DIR}/${name}" "${COMFYUI_DIR}/${name}"
   done
 
-  ln -sfn "${COMFYUI_DIR}/models" "${DATA_DIR}/models"
-  ln -sfn "${COMFYUI_DIR}/input" "${DATA_DIR}/input"
-  ln -sfn "${COMFYUI_DIR}/output" "${DATA_DIR}/output"
-  ln -sfn "${COMFYUI_DIR}/user" "${DATA_DIR}/user"
-  ln -sfn "${COMFYUI_DIR}/custom_nodes" "${DATA_DIR}/custom_nodes"
+  if [ -L "${DATA_DIR}/custom_nodes" ]; then
+    rm -f "${DATA_DIR}/custom_nodes"
+  fi
 
   if [ -d "${DATA_DIR}/user/default/workflows" ] && [ ! -L "${DATA_DIR}/user/default/workflows" ]; then
     mkdir -p "${DATA_DIR}/workflows"
@@ -86,12 +87,14 @@ initialize_comfyui() {
 
   rm -rf "${COMFYUI_DIR}/custom_nodes/.ipynb_checkpoints" "${COMFYUI_DIR}/custom_nodes/custom_nodes"
 
-  for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
-    if [ -f "${req}" ]; then
-      echo "Installing custom node requirements: ${req}"
-      pip install --no-warn-conflicts -r "${req}"
-    fi
-  done
+  if [ "${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT}" = "1" ]; then
+    for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
+      if [ -f "${req}" ]; then
+        echo "Installing custom node requirements: ${req}"
+        pip install --no-warn-conflicts -r "${req}"
+      fi
+    done
+  fi
 
   repair_manager_reboot_endpoint
   repair_diversityboost_video_hook

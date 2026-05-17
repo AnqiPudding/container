@@ -17,3 +17,5 @@ input/
 output/
 user/
 notebooks/
+desktop/**/bin/
+desktop/**/obj/

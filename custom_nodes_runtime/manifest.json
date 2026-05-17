@@ -1,0 +1,24 @@
+﻿{
+    "syncedAtUtc":  "2026-05-17T13:29:14.2366623Z",
+    "volume":  "modal-comfyui-data",
+    "nodes":  [
+                  "ComfyUI_Eclipse",
+                  "comfyui_essentials",
+                  "comfyui_fill-nodes",
+                  "comfyui_ultimatesdupscale",
+                  "comfyui-custom-scripts",
+                  "ComfyUI-DiversityBoost",
+                  "comfyui-easy-use",
+                  "comfyui-find-perfect-resolution",
+                  "ComfyUI-FlashVSR_Ultra_Fast",
+                  "ComfyUI-GGUF",
+                  "ComfyUI-GIMM-VFI",
+                  "comfyui-kjnodes",
+                  "comfyui-lcs",
+                  "ComfyUI-SeedVR2_VideoUpscaler",
+                  "comfyui-videohelpersuite",
+                  "ComfyUI-WanVideoWrapper",
+                  "rgthree-comfy",
+                  "websocket_image_save.py"
+              ]
+}

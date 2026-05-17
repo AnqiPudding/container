@@ -74,3 +74,31 @@ MODAL_GPU=L40S modal deploy modal_app.py
 ```
 
 The default GPU is `A10`.
+
+## Windows control app
+
+This repo includes a Windows desktop control app at `desktop/ComfyDeployControl`.
+
+It can:
+
+- watch the Modal `custom_nodes` volume for installed/uninstalled nodes
+- sync detected nodes into `custom_nodes_runtime`
+- cancel older Docker image builds before starting the newest one
+- configure DockerHub secrets in GitHub Actions
+- deploy/stop the Modal app with a selected GPU
+- stream Modal app logs and ComfyUI stderr logs
+- optionally prune old DockerHub `sha-*` image tags
+
+Build it locally:
+
+```powershell
+dotnet build desktop\ComfyDeployControl\ComfyDeployControl.csproj -c Release
+```
+
+Run:
+
+```powershell
+desktop\ComfyDeployControl\bin\Release\net8.0-windows\ComfyDeployControl.exe
+```
+
+The app expects `gh` and `modal` to be installed and authenticated on Windows.
