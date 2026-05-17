@@ -8,6 +8,7 @@ COMFYUI_REPO_URL="${COMFYUI_REPO_URL:-https://github.com/comfyanonymous/ComfyUI.
 COMFYUI_SESSION_PREFIX="${COMFYUI_SESSION_PREFIX:-/tmp/comfyui-manager-session}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT="${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT:-0}"
+CUSTOM_NODE_STAGING_DIR="${CUSTOM_NODE_STAGING_DIR:-${DATA_DIR}/custom_nodes_pending}"
 
 child_pid=""
 stop_requested=0
@@ -62,6 +63,10 @@ initialize_comfyui() {
   fi
 
   rsync -a --delete "${IMAGE_COMFYUI_DIR}/custom_nodes/" "${COMFYUI_DIR}/custom_nodes/"
+  if [ -d "${CUSTOM_NODE_STAGING_DIR}" ]; then
+    echo "Applying pending custom nodes from ${CUSTOM_NODE_STAGING_DIR}."
+    rsync -a --delete "${CUSTOM_NODE_STAGING_DIR}/" "${COMFYUI_DIR}/custom_nodes/"
+  fi
 
   for name in models input output user; do
     mkdir -p "${DATA_DIR}/${name}"
@@ -101,6 +106,20 @@ initialize_comfyui() {
 
   pip install "transformers<5"
   pip install --no-warn-conflicts "decorator>=5.1.0"
+}
+
+stage_runtime_custom_nodes() {
+  if [ ! -d "${COMFYUI_DIR}/custom_nodes" ]; then
+    return 0
+  fi
+
+  echo "Saving current custom nodes to ${CUSTOM_NODE_STAGING_DIR}."
+  mkdir -p "${CUSTOM_NODE_STAGING_DIR}"
+  rsync -a --delete \
+    --exclude "__pycache__/" \
+    --exclude "*.pyc" \
+    --exclude ".ipynb_checkpoints/" \
+    "${COMFYUI_DIR}/custom_nodes/" "${CUSTOM_NODE_STAGING_DIR}/"
 }
 
 repair_manager_reboot_endpoint() {
@@ -196,6 +215,7 @@ while [ "${stop_requested}" -eq 0 ]; do
   fi
 
   if [ -f "${COMFYUI_SESSION_PREFIX}.reboot" ]; then
+    stage_runtime_custom_nodes
     echo "ComfyUI-Manager requested a reboot; restarting ComfyUI in this container."
   else
     echo "ComfyUI exited with code ${exit_code}; restarting in this container."

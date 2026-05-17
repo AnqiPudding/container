@@ -11,16 +11,29 @@
         <Style x:Key="Panel" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#263244"/>
-            <Setter Property="Background" Value="#151A24"/>
+            <Setter Property="BorderBrush" Value="#294356"/>
+            <Setter Property="Background">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#121821" Offset="0"/>
+                        <GradientStop Color="#101B20" Offset="0.55"/>
+                        <GradientStop Color="#1A1720" Offset="1"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Padding" Value="18"/>
             <Setter Property="Margin" Value="0,0,14,14"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#05070A" BlurRadius="18" ShadowDepth="4" Opacity="0.32"/>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="SoftButton" TargetType="Button">
             <Setter Property="Foreground" Value="#F4F7FB"/>
-            <Setter Property="Background" Value="#25344A"/>
-            <Setter Property="BorderBrush" Value="#42617F"/>
+            <Setter Property="Background" Value="#17212C"/>
+            <Setter Property="BorderBrush" Value="#3C6276"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,10"/>
             <Setter Property="Margin" Value="0,0,10,10"/>
@@ -29,21 +42,37 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="Root" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#1B2D34" Offset="0"/>
+                                    <GradientStop Color="#20314A" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform/>
+                                    <TranslateTransform/>
+                                </TransformGroup>
+                            </Border.RenderTransform>
+                            <Grid>
+                                <Rectangle Width="3" HorizontalAlignment="Left" RadiusX="2" RadiusY="2" Fill="#79D6C1" Opacity="0.75" Margin="-5,1,8,1"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#31506B"/>
-                                <Setter TargetName="Root" Property="RenderTransform">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#79D6C1"/>
+                                <Setter TargetName="Root" Property="Effect">
                                     <Setter.Value>
-                                        <ScaleTransform ScaleX="1.015" ScaleY="1.015"/>
+                                        <DropShadowEffect Color="#35B8A8" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1E2A3C"/>
+                                <Setter TargetName="Root" Property="Opacity" Value="0.76"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Root" Property="Opacity" Value="0.45"/>
@@ -56,7 +85,7 @@
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
             <Setter Property="Background" Value="#D66A35"/>
-            <Setter Property="BorderBrush" Value="#F09A62"/>
+            <Setter Property="BorderBrush" Value="#F0B35A"/>
         </Style>
 
         <Style TargetType="TextBox">
@@ -95,9 +124,9 @@
     <Grid>
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#0A0D14" Offset="0"/>
-                <GradientStop Color="#102132" Offset="0.48"/>
-                <GradientStop Color="#19161C" Offset="1"/>
+                <GradientStop Color="#070B10" Offset="0"/>
+                <GradientStop Color="#0A1F24" Offset="0.42"/>
+                <GradientStop Color="#211720" Offset="1"/>
             </LinearGradientBrush>
         </Grid.Background>
 
@@ -114,9 +143,9 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Comfy Deploy Control" FontSize="30" FontWeight="Bold" Foreground="#FFFFFF"/>
-                    <TextBlock Text="Bake custom nodes into Docker, cancel stale builds, redeploy Modal when the image is ready."
-                               Foreground="#AAB7C8" Margin="0,4,0,0"/>
+                    <TextBlock Text="Comfy Control Deck" FontSize="32" FontWeight="Black" Foreground="#FFFFFF"/>
+                    <TextBlock Text="Install in ComfyUI, bake to Docker, redeploy Modal, and keep the logs moving."
+                               Foreground="#B7C8D8" Margin="0,4,0,0"/>
                 </StackPanel>
                 <Border Grid.Column="1" CornerRadius="6" Padding="14,10" Background="#111827" BorderBrush="#304157" BorderThickness="1">
                     <StackPanel Orientation="Horizontal">

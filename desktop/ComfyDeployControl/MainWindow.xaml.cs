@@ -12,6 +12,9 @@ namespace ComfyDeployControl;
 
 public partial class MainWindow : Window
 {
+    private const string PendingCustomNodesPath = "/custom_nodes_pending";
+    private const string LegacyCustomNodesPath = "/ComfyUI/custom_nodes";
+
     private readonly DispatcherTimer _watchTimer = new() { Interval = TimeSpan.FromSeconds(45) };
     private readonly HttpClient _http = new();
     private PipelineSettings _settings = new();
@@ -115,8 +118,8 @@ public partial class MainWindow : Window
             PullSettingsFromUi();
             _settings.Save();
             var repo = RepoSpecifier;
-            await RunAsync("gh", $"secret set DOCKERHUB_USERNAME --repo {repo} -b {Q(_settings.DockerUsername)}", _settings.LocalRepoPath, LogLine, token);
-            await RunAsync("gh", $"secret set DOCKERHUB_TOKEN --repo {repo} -b {Q(_settings.DockerToken)}", _settings.LocalRepoPath, LogLine, token);
+            await RunAsync("gh", $"secret set DOCKERHUB_USERNAME --repo {repo}", _settings.LocalRepoPath, LogLine, token, standardInput: _settings.DockerUsername);
+            await RunAsync("gh", $"secret set DOCKERHUB_TOKEN --repo {repo}", _settings.LocalRepoPath, LogLine, token, standardInput: _settings.DockerToken);
             await LogAsync("GitHub Actions secrets are configured.");
         });
     }
@@ -220,6 +223,7 @@ public partial class MainWindow : Window
                 await PruneDockerHubTagsAsync(token);
 
             await DeployModalAsync(token);
+            await ClearPendingCustomNodesAsync(token);
             await RefreshNodesAsync();
             await RefreshBuildHistoryAsync();
         });
@@ -228,6 +232,7 @@ public partial class MainWindow : Window
     private async Task SyncNodesFromModalAsync(CancellationToken token)
     {
         var nodes = await ListModalNodesAsync(token);
+        var sourcePath = await ResolveCustomNodeSourcePathAsync(token);
         NodeList.ItemsSource = nodes;
         NodeCountText.Text = nodes.Count.ToString();
         _lastNodeFingerprint = string.Join("|", nodes.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
@@ -245,7 +250,7 @@ public partial class MainWindow : Window
         {
             token.ThrowIfCancellationRequested();
             await LogAsync($"Downloading custom node: {node}");
-            var remotePath = $"/ComfyUI/custom_nodes/{node}";
+            var remotePath = $"{sourcePath}/{node}";
             await RunAsync("modal", $"volume get {_settings.ModalVolumeName} {Q(remotePath)} {Q(runtimeDir)} --force", _settings.LocalRepoPath, LogLine, token);
         }
 
@@ -265,8 +270,9 @@ public partial class MainWindow : Window
 
     private async Task<List<string>> ListModalNodesAsync(CancellationToken token)
     {
+        var sourcePath = await ResolveCustomNodeSourcePathAsync(token);
         var lines = new List<string>();
-        await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} /ComfyUI/custom_nodes", _settings.LocalRepoPath, lines.Add, token, quiet: true);
+        await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {sourcePath}", _settings.LocalRepoPath, lines.Add, token, quiet: true);
 
         var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -279,12 +285,31 @@ public partial class MainWindow : Window
 
         return lines
             .Select(line => line.Trim())
-            .Where(line => line.StartsWith("ComfyUI/custom_nodes/", StringComparison.OrdinalIgnoreCase))
-            .Select(line => line["ComfyUI/custom_nodes/".Length..].Split('/', '\\')[0])
+            .Select(line => ExtractVolumeChildName(line, sourcePath))
             .Where(name => !string.IsNullOrWhiteSpace(name) && !skip.Contains(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private async Task<string> ResolveCustomNodeSourcePathAsync(CancellationToken token)
+    {
+        var lines = new List<string>();
+        var code = await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {PendingCustomNodesPath}", _settings.LocalRepoPath, lines.Add, token, quiet: true, allowFailure: true);
+        if (code == 0 && lines.Any(line => ExtractVolumeChildName(line, PendingCustomNodesPath) is { Length: > 0 } name && name != "__pycache__"))
+            return PendingCustomNodesPath;
+
+        return LegacyCustomNodesPath;
+    }
+
+    private static string ExtractVolumeChildName(string line, string sourcePath)
+    {
+        var normalized = line.Trim().Replace('\\', '/').TrimStart('/');
+        var prefix = sourcePath.Trim('/').Replace('\\', '/') + "/";
+        if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return "";
+
+        return normalized[prefix.Length..].Split('/')[0];
     }
 
     private static void CleanDownloadedNodes(string runtimeDir)
@@ -377,6 +402,12 @@ public partial class MainWindow : Window
         BuildStatusText.Text = "Deployed";
     }
 
+    private async Task ClearPendingCustomNodesAsync(CancellationToken token)
+    {
+        await RunAsync("modal", $"volume rm {_settings.ModalVolumeName} {PendingCustomNodesPath} --recursive", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+        await LogAsync("Cleared pending custom-node staging after successful deploy.");
+    }
+
     private async Task PruneDockerHubTagsAsync(CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(_settings.DockerUsername) || string.IsNullOrWhiteSpace(_settings.DockerToken))
@@ -456,6 +487,12 @@ public partial class MainWindow : Window
         {
             Append(target, "Log stream stopped.");
         }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex);
+            Append(target, "Log stream error: " + ex.Message);
+            SetStatus("Log error");
+        }
     }
 
     private async Task OpenModalUrlAsync(string label, string suffix)
@@ -495,6 +532,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SetStatus("Error");
+            App.WriteCrashLog(ex);
             await LogAsync("ERROR: " + ex.Message);
         }
         finally
@@ -511,7 +549,8 @@ public partial class MainWindow : Window
         CancellationToken token,
         IDictionary<string, string>? env = null,
         bool quiet = false,
-        bool allowFailure = false)
+        bool allowFailure = false,
+        string? standardInput = null)
     {
         if (!quiet)
             await LogAsync($"> {fileName} {arguments}");
@@ -522,6 +561,7 @@ public partial class MainWindow : Window
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = standardInput is not null,
             CreateNoWindow = true
         };
         psi.Environment["PYTHONIOENCODING"] = "utf-8";
@@ -534,6 +574,13 @@ public partial class MainWindow : Window
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.Start();
+
+        if (standardInput is not null)
+        {
+            await process.StandardInput.WriteAsync(standardInput.AsMemory(), token);
+            await process.StandardInput.FlushAsync(token);
+            process.StandardInput.Close();
+        }
 
         var stdout = PumpAsync(process.StandardOutput, onLine, token);
         var stderr = PumpAsync(process.StandardError, onLine, token);
