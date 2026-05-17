@@ -223,7 +223,8 @@ public partial class MainWindow : Window
                 await PruneDockerHubTagsAsync(token);
 
             await DeployModalAsync(token);
-            await ClearPendingCustomNodesAsync(token);
+            if (!forceBuild)
+                await ClearPendingCustomNodesAsync(token);
             await RefreshNodesAsync();
             await RefreshBuildHistoryAsync();
         });
