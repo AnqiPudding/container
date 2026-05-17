@@ -89,14 +89,62 @@ initialize_comfyui() {
   for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
     if [ -f "${req}" ]; then
       echo "Installing custom node requirements: ${req}"
-      pip install -r "${req}"
+      pip install --no-warn-conflicts -r "${req}"
     fi
   done
 
+  repair_manager_reboot_endpoint
   repair_diversityboost_video_hook
 
   pip install "transformers<5"
-  pip install "decorator>=5.1.0"
+  pip install --no-warn-conflicts "decorator>=5.1.0"
+}
+
+repair_manager_reboot_endpoint() {
+  local manager_server="${COMFYUI_DIR}/custom_nodes/comfyui-manager/glob/manager_server.py"
+
+  if [ ! -f "${manager_server}" ]; then
+    return 0
+  fi
+
+  python - "${manager_server}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+old = '''    try:
+        sys.stdout.close_log()
+    except Exception:
+        pass
+
+    if '__COMFY_CLI_SESSION__' in os.environ:
+        with open(os.path.join(os.environ['__COMFY_CLI_SESSION__'] + '.reboot'), 'w'):
+            pass
+
+        print("\\nRestarting...\\n\\n")  # This printing should not be logging - that will be ugly
+        exit(0)
+'''
+
+new = '''    if '__COMFY_CLI_SESSION__' in os.environ:
+        with open(os.path.join(os.environ['__COMFY_CLI_SESSION__'] + '.reboot'), 'w'):
+            pass
+
+        print("\\nRestarting...\\n\\n")  # This printing should not be logging - that will be ugly
+        threading.Timer(0.2, lambda: os._exit(0)).start()
+        return web.json_response({"status": "restarting"})
+
+    try:
+        sys.stdout.close_log()
+    except Exception:
+        pass
+'''
+
+if old in text:
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    print(f"Patched ComfyUI-Manager reboot endpoint for Modal: {path}")
+PY
 }
 
 repair_diversityboost_video_hook() {

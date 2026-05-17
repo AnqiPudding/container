@@ -1805,17 +1805,18 @@ def restart(self):
         logging.error(SECURITY_MESSAGE_MIDDLE_OR_BELOW)
         return security_403_response()
 
-    try:
-        sys.stdout.close_log()
-    except Exception:
-        pass
-
     if '__COMFY_CLI_SESSION__' in os.environ:
         with open(os.path.join(os.environ['__COMFY_CLI_SESSION__'] + '.reboot'), 'w'):
             pass
 
         print("\nRestarting...\n\n")  # This printing should not be logging - that will be ugly
-        exit(0)
+        threading.Timer(0.2, lambda: os._exit(0)).start()
+        return web.json_response({"status": "restarting"})
+
+    try:
+        sys.stdout.close_log()
+    except Exception:
+        pass
 
     print("\nRestarting... [Legacy Mode]\n\n")  # This printing should not be logging - that will be ugly
 
