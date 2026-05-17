@@ -11,11 +11,11 @@ venv/
 env/
 .env
 *.log
-ComfyUI/
-models/
-input/
-output/
-user/
-notebooks/
+/ComfyUI/
+/models/
+/input/
+/output/
+/user/
+/notebooks/
 desktop/**/bin/
 desktop/**/obj/
