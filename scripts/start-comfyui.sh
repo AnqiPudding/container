@@ -93,6 +93,7 @@ initialize_comfyui() {
   ln -sfn "${DATA_DIR}/workflows" "${DATA_DIR}/user/default/workflows"
 
   rm -rf "${COMFYUI_DIR}/custom_nodes/.ipynb_checkpoints" "${COMFYUI_DIR}/custom_nodes/custom_nodes"
+  remove_incomplete_custom_node_dirs "${COMFYUI_DIR}/custom_nodes"
 
   if [ "${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT}" = "1" ]; then
     for req in "${COMFYUI_DIR}"/custom_nodes/*/requirements.txt; do
@@ -166,6 +167,32 @@ if failed:
     print("WARNING: Some custom node requirements failed to install:", file=sys.stderr)
     for item in failed:
         print(f"  - {item}", file=sys.stderr)
+PY
+}
+
+remove_incomplete_custom_node_dirs() {
+  local custom_nodes_dir="${1}"
+
+  if [ ! -d "${custom_nodes_dir}" ]; then
+    return 0
+  fi
+
+  python - "${custom_nodes_dir}" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(sys.argv[1])
+for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+    if not child.is_dir():
+        continue
+    if child.name in {".disabled", "__pycache__"}:
+        continue
+    if (child / "__init__.py").exists():
+        continue
+
+    print(f"Removing incomplete custom node directory with no __init__.py: {child}")
+    shutil.rmtree(child)
 PY
 }
 
@@ -261,7 +288,9 @@ while [ "${stop_requested}" -eq 0 ]; do
 
   if [ -f "${COMFYUI_SESSION_PREFIX}.reboot" ]; then
     stage_runtime_custom_nodes
+    remove_incomplete_custom_node_dirs "${COMFYUI_DIR}/custom_nodes"
     install_custom_node_requirements "ComfyUI-Manager restart"
+    stage_runtime_custom_nodes
     echo "ComfyUI-Manager requested a reboot; restarting ComfyUI in this container."
   else
     echo "ComfyUI exited with code ${exit_code}; restarting in this container."
