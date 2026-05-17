@@ -18,8 +18,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _watchTimer = new() { Interval = TimeSpan.FromSeconds(45) };
     private readonly HttpClient _http = new();
     private PipelineSettings _settings = new();
-    private CancellationTokenSource? _modalLogCts;
-    private CancellationTokenSource? _comfyLogCts;
+    private CancellationTokenSource? _operationCts;
     private bool _busy;
     private string _lastNodeFingerprint = "";
 
@@ -36,6 +35,8 @@ public partial class MainWindow : Window
             _settings.LocalRepoPath = FindRepoRoot();
 
         ApplySettingsToUi();
+        MainControlsPanel.IsEnabled = false;
+        _ = RefreshSetupStateAsync();
         _ = RefreshNodesAsync();
         _ = RefreshBuildHistoryAsync();
     }
@@ -43,8 +44,7 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         _watchTimer.Stop();
-        _modalLogCts?.Cancel();
-        _comfyLogCts?.Cancel();
+        _operationCts?.Cancel();
     }
 
     private void ApplySettingsToUi()
@@ -101,49 +101,98 @@ public partial class MainWindow : Window
         PullSettingsFromUi();
         _settings.Save();
         await LogAsync("Settings saved.");
+        await RefreshSetupStateAsync();
+    }
+
+    private async void ConnectGitHub_Click(object sender, RoutedEventArgs e)
+    {
+        await RunGuardedAsync("Connecting GitHub", async token =>
+        {
+            PullSettingsFromUi();
+            _settings.Save();
+            await LogAsync("Opening GitHub browser sign-in. If a code is shown, it is copied to your clipboard.");
+            await RunAsync("gh", "auth login --web --clipboard --git-protocol https", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+            await RefreshSetupStateAsync();
+        });
+    }
+
+    private async void ConnectModal_Click(object sender, RoutedEventArgs e)
+    {
+        await RunGuardedAsync("Connecting Modal", async token =>
+        {
+            PullSettingsFromUi();
+            _settings.Save();
+            await LogAsync("Starting Modal setup. Follow the browser prompt from Modal.");
+            await RunAsync("modal", "setup", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+            await RefreshSetupStateAsync();
+        });
     }
 
     private async void CheckAccess_Click(object sender, RoutedEventArgs e)
     {
-        await RunGuardedAsync("Checking CLI access", async token =>
+        await RunGuardedAsync("Checking access", async token =>
         {
-            await RunAsync("gh", "auth status", _settings.LocalRepoPath, LogLine, token);
-            await RunAsync("modal", "profile current", _settings.LocalRepoPath, LogLine, token);
-            await RunAsync("git", "status --short --branch", _settings.LocalRepoPath, LogLine, token);
+            PullSettingsFromUi();
+            _settings.Save();
+            await RunAsync("gh", "auth status", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+            await RunAsync("modal", "profile current", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+            await RunAsync("git", "status --short --branch", _settings.LocalRepoPath, LogLine, token, allowFailure: true);
+            await RefreshSetupStateAsync();
         });
     }
 
     private async void ConfigureSecrets_Click(object sender, RoutedEventArgs e)
     {
-        await RunGuardedAsync("Configuring GitHub secrets", async token =>
+        await RunGuardedAsync("Saving Docker secrets", async token =>
         {
             PullSettingsFromUi();
+            ValidateDockerSettings();
             _settings.Save();
             var repo = RepoSpecifier;
             await RunAsync("gh", $"secret set DOCKERHUB_USERNAME --repo {repo}", _settings.LocalRepoPath, LogLine, token, standardInput: _settings.DockerUsername);
             await RunAsync("gh", $"secret set DOCKERHUB_TOKEN --repo {repo}", _settings.LocalRepoPath, LogLine, token, standardInput: _settings.DockerToken);
-            await LogAsync("GitHub Actions secrets are configured.");
+            await LogAsync("DockerHub credentials are now stored as GitHub Actions secrets.");
+            await RefreshSetupStateAsync();
         });
     }
 
     private async void RunPipeline_Click(object sender, RoutedEventArgs e)
     {
-        await RunPipelineAsync(forceBuild: false);
+        await RunBakeAsync(forceBuild: false);
     }
 
     private async void ForceBuild_Click(object sender, RoutedEventArgs e)
     {
-        await RunPipelineAsync(forceBuild: true);
+        await RunBakeAsync(forceBuild: true);
     }
 
     private async void Deploy_Click(object sender, RoutedEventArgs e)
     {
-        await RunGuardedAsync("Deploying Modal app", DeployModalAsync);
+        await RunGuardedAsync("Deploying latest image", async token =>
+        {
+            PullSettingsFromUi();
+            _settings.Save();
+            await DeployModalAsync(token);
+            if (await PendingCustomNodesExistAsync(token))
+            {
+                var pendingFingerprint = Fingerprint(await ListModalNodesAsync(token, allowLocalFallback: false));
+                if (!string.IsNullOrWhiteSpace(_settings.LastBakedNodeFingerprint) &&
+                    string.Equals(pendingFingerprint, _settings.LastBakedNodeFingerprint, StringComparison.Ordinal))
+                {
+                    await ClearPendingCustomNodesAsync(token);
+                }
+                else
+                {
+                    await LogAsync("Pending custom nodes were not cleared because they do not match the last successful bake.");
+                }
+            }
+            await RefreshNodesAsync();
+        });
     }
 
     private async void StopApp_Click(object sender, RoutedEventArgs e)
     {
-        await RunGuardedAsync("Stopping Modal app", token => RunAsync("modal", $"app stop {_settings.ModalAppName} --yes", _settings.LocalRepoPath, LogLine, token));
+        await RunGuardedAsync("Stopping Modal app", token => RunAsync("modal", $"app stop {_settings.ModalAppName} --yes", _settings.LocalRepoPath, LogLine, token, allowFailure: true));
     }
 
     private async void RefreshBuilds_Click(object sender, RoutedEventArgs e)
@@ -151,23 +200,15 @@ public partial class MainWindow : Window
         await RefreshBuildHistoryAsync();
     }
 
-    private void StartAppLogs_Click(object sender, RoutedEventArgs e)
+    private async void RefreshNodes_Click(object sender, RoutedEventArgs e)
     {
-        StartLogStream(ModalLogBox, ref _modalLogCts, $"app logs {_settings.ModalAppName} -f --timestamps", "Modal app logs");
+        await RefreshNodesAsync();
     }
 
-    private void StartComfyLogs_Click(object sender, RoutedEventArgs e)
+    private void CancelOperation_Click(object sender, RoutedEventArgs e)
     {
-        StartLogStream(ComfyLogBox, ref _comfyLogCts, $"app logs {_settings.ModalAppName} -f --timestamps", "ComfyUI logs");
-    }
-
-    private void StopLogs_Click(object sender, RoutedEventArgs e)
-    {
-        _modalLogCts?.Cancel();
-        _modalLogCts = null;
-        _comfyLogCts?.Cancel();
-        _comfyLogCts = null;
-        SetStatus("Logs stopped");
+        _operationCts?.Cancel();
+        SetStatus("Canceling");
     }
 
     private void OpenComfy_Click(object sender, RoutedEventArgs e)
@@ -195,23 +236,23 @@ public partial class MainWindow : Window
         try
         {
             var nodes = await ListModalNodesAsync(CancellationToken.None);
-            var fingerprint = string.Join("|", nodes.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+            var fingerprint = Fingerprint(nodes);
             if (!string.IsNullOrEmpty(_lastNodeFingerprint) && fingerprint != _lastNodeFingerprint)
             {
-                await LogAsync("Custom node change detected. Starting rebuild pipeline.");
-                await RunPipelineAsync(forceBuild: false);
+                await LogAsync("Custom node change detected. Baking a new Docker image for the next deploy.");
+                await RunBakeAsync(forceBuild: false);
             }
             _lastNodeFingerprint = fingerprint;
         }
         catch (Exception ex)
         {
-            await LogAsync("Watcher error: " + ex.Message);
+            await LogAsync("Auto bake check failed: " + ex.Message);
         }
     }
 
-    private async Task RunPipelineAsync(bool forceBuild)
+    private async Task RunBakeAsync(bool forceBuild)
     {
-        await RunGuardedAsync(forceBuild ? "Building current repo" : "Syncing nodes and rebuilding", async token =>
+        await RunGuardedAsync(forceBuild ? "Baking current repo" : "Baking installed nodes", async token =>
         {
             PullSettingsFromUi();
             _settings.Save();
@@ -219,16 +260,17 @@ public partial class MainWindow : Window
             if (!forceBuild)
                 await SyncNodesFromModalAsync(token);
 
-            await CommitAndPushIfChangedAsync(token);
+            await CommitAndPushIfChangedAsync(token, forceBuild);
             var runId = await StartFreshBuildAsync(token);
             await WaitForBuildAsync(runId, token);
 
             if (_settings.PruneDockerTags)
                 await PruneDockerHubTagsAsync(token);
 
-            await DeployModalAsync(token);
-            if (!forceBuild)
-                await ClearPendingCustomNodesAsync(token);
+            BuildStatusText.Text = "Image ready";
+            _settings.LastBakedNodeFingerprint = Fingerprint(forceBuild ? ListLocalRuntimeNodes() : await ListModalNodesAsync(token, allowLocalFallback: false));
+            _settings.Save();
+            await LogAsync("Docker image is ready. Deploy latest image when you want Modal to pull it.");
             await RefreshNodesAsync();
             await RefreshBuildHistoryAsync();
         });
@@ -236,19 +278,21 @@ public partial class MainWindow : Window
 
     private async Task SyncNodesFromModalAsync(CancellationToken token)
     {
-        var nodes = await ListModalNodesAsync(token);
         var sourcePath = await ResolveCustomNodeSourcePathAsync(token);
+        var nodes = await ListModalNodesAsync(token, allowLocalFallback: false);
         NodeList.ItemsSource = nodes;
         NodeCountText.Text = nodes.Count.ToString();
-        _lastNodeFingerprint = string.Join("|", nodes.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+        _lastNodeFingerprint = Fingerprint(nodes);
 
-        var runtimeDir = Path.Combine(_settings.LocalRepoPath, "custom_nodes_runtime");
-        if (Directory.Exists(runtimeDir))
-            Directory.Delete(runtimeDir, recursive: true);
+        var runtimeDir = Path.GetFullPath(Path.Combine(_settings.LocalRepoPath, "custom_nodes_runtime"));
+        var repoRoot = Path.GetFullPath(_settings.LocalRepoPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!runtimeDir.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Refusing to sync custom nodes outside the selected repository.");
+
         Directory.CreateDirectory(runtimeDir);
 
         await File.WriteAllTextAsync(Path.Combine(runtimeDir, "README.md"),
-            "# App-managed custom nodes\n\nThis directory is refreshed by ComfyDeployControl from the Modal volume.\n", token);
+            "# App-managed custom nodes\n\nThis directory is refreshed by ComfyLaunchControl from the Modal volume. Pending nodes are merged over the baked baseline so incomplete staging cannot delete existing node files.\n", token);
         await File.WriteAllTextAsync(Path.Combine(runtimeDir, ".gitkeep"), "", token);
 
         foreach (var node in nodes)
@@ -265,6 +309,7 @@ public partial class MainWindow : Window
         {
             syncedAtUtc = DateTimeOffset.UtcNow,
             volume = _settings.ModalVolumeName,
+            sourcePath,
             nodes
         };
         await File.WriteAllTextAsync(
@@ -273,17 +318,26 @@ public partial class MainWindow : Window
             token);
     }
 
-    private async Task<List<string>> ListModalNodesAsync(CancellationToken token)
+    private async Task<List<string>> ListModalNodesAsync(CancellationToken token, bool allowLocalFallback = true)
     {
         var sourcePath = await ResolveCustomNodeSourcePathAsync(token);
         var lines = new List<string>();
-        await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {sourcePath}", _settings.LocalRepoPath, lines.Add, token, quiet: true);
+        var code = await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {sourcePath}", _settings.LocalRepoPath, lines.Add, token, quiet: true, allowFailure: true);
+        if (code != 0)
+        {
+            if (!allowLocalFallback)
+                throw new InvalidOperationException($"Could not list Modal volume path {sourcePath}. Restart ComfyUI once after installing nodes, then try baking again.");
+            return ListLocalRuntimeNodes();
+        }
 
         var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "__pycache__",
             ".disabled",
             "example_node.py.example",
+            ".gitkeep",
+            "README.md",
+            "manifest.json",
             "comfyui-manager",
             "ComfyUI-Civitai-Downloader"
         };
@@ -297,14 +351,42 @@ public partial class MainWindow : Window
             .ToList();
     }
 
+    private List<string> ListLocalRuntimeNodes()
+    {
+        var runtimeDir = Path.Combine(_settings.LocalRepoPath, "custom_nodes_runtime");
+        if (!Directory.Exists(runtimeDir))
+            return new List<string>();
+
+        var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "__pycache__",
+            ".git",
+            ".gitkeep",
+            "README.md",
+            "manifest.json",
+            "example_node.py.example"
+        };
+        return Directory.EnumerateFileSystemEntries(runtimeDir)
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrWhiteSpace(name) && !skip.Contains(name!))
+            .Cast<string>()
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private async Task<string> ResolveCustomNodeSourcePathAsync(CancellationToken token)
     {
-        var lines = new List<string>();
-        var code = await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {PendingCustomNodesPath}", _settings.LocalRepoPath, lines.Add, token, quiet: true, allowFailure: true);
-        if (code == 0 && lines.Any(line => ExtractVolumeChildName(line, PendingCustomNodesPath) is { Length: > 0 } name && name != "__pycache__"))
+        if (await PendingCustomNodesExistAsync(token))
             return PendingCustomNodesPath;
 
         return LegacyCustomNodesPath;
+    }
+
+    private async Task<bool> PendingCustomNodesExistAsync(CancellationToken token)
+    {
+        var lines = new List<string>();
+        var code = await RunAsync("modal", $"volume ls {_settings.ModalVolumeName} {PendingCustomNodesPath}", _settings.LocalRepoPath, lines.Add, token, quiet: true, allowFailure: true);
+        return code == 0 && lines.Any(line => ExtractVolumeChildName(line, PendingCustomNodesPath) is { Length: > 0 } name && name != "__pycache__");
     }
 
     private static string ExtractVolumeChildName(string line, string sourcePath)
@@ -329,9 +411,10 @@ public partial class MainWindow : Window
             File.Delete(file);
     }
 
-    private async Task CommitAndPushIfChangedAsync(CancellationToken token)
+    private async Task CommitAndPushIfChangedAsync(CancellationToken token, bool forceBuild)
     {
-        await RunAsync("git", "add Dockerfile .dockerignore .gitignore custom_nodes_runtime desktop", _settings.LocalRepoPath, LogLine, token);
+        var paths = forceBuild ? "Dockerfile .dockerignore .gitignore scripts custom_nodes_runtime" : "custom_nodes_runtime";
+        await RunAsync("git", $"add {paths}", _settings.LocalRepoPath, LogLine, token);
         var diffCode = await RunAsync("git", "diff --cached --quiet", _settings.LocalRepoPath, _ => { }, token, quiet: true, allowFailure: true);
         if (diffCode == 0)
         {
@@ -405,6 +488,7 @@ public partial class MainWindow : Window
         var env = new Dictionary<string, string> { ["MODAL_GPU"] = _settings.ModalGpu, ["NO_COLOR"] = "1" };
         await RunAsync("modal", "deploy modal_app.py", _settings.LocalRepoPath, LogLine, token, env);
         BuildStatusText.Text = "Deployed";
+        await LogAsync("Modal deployment finished.");
     }
 
     private async Task ClearPendingCustomNodesAsync(CancellationToken token)
@@ -462,7 +546,7 @@ public partial class MainWindow : Window
             var nodes = await ListModalNodesAsync(CancellationToken.None);
             NodeList.ItemsSource = nodes;
             NodeCountText.Text = nodes.Count.ToString();
-            _lastNodeFingerprint = string.Join("|", nodes);
+            _lastNodeFingerprint = Fingerprint(nodes);
         }
         catch (Exception ex)
         {
@@ -477,35 +561,56 @@ public partial class MainWindow : Window
         BuildHistoryBox.Text = code == 0 ? PrettyJson(buffer.ToString()) : buffer.ToString();
     }
 
-    private void StartLogStream(TextBox target, ref CancellationTokenSource? streamCts, string modalArgs, string streamName)
+    private async Task RefreshSetupStateAsync()
     {
         PullSettingsFromUi();
-        streamCts?.Cancel();
-        streamCts = new CancellationTokenSource();
-        var token = streamCts.Token;
-        target.Clear();
-        Append(target, $"Starting {streamName}...");
-        SetStatus($"Streaming {streamName}");
 
-        _ = Task.Run(async () =>
+        var gh = await CaptureAsync("gh", "auth status", CancellationToken.None);
+        var modal = await CaptureAsync("modal", "profile current", CancellationToken.None);
+        var secrets = await CaptureAsync("gh", $"secret list --repo {RepoSpecifier} --json name", CancellationToken.None);
+
+        var githubOk = gh.code == 0;
+        var modalOk = modal.code == 0;
+        var dockerOk = HasDockerSecrets(secrets.output) || (!string.IsNullOrWhiteSpace(_settings.DockerUsername) && !string.IsNullOrWhiteSpace(_settings.DockerToken));
+        var ready = githubOk && modalOk && dockerOk;
+
+        Dispatcher.Invoke(() =>
         {
-            try
-            {
-                var exitCode = await RunAsync("modal", modalArgs, _settings.LocalRepoPath, line => Append(target, line), token, quiet: true, allowFailure: true);
-                if (!token.IsCancellationRequested)
-                    Append(target, $"{streamName} ended with exit code {exitCode}.");
-            }
-            catch (OperationCanceledException)
-            {
-                Append(target, $"{streamName} stopped.");
-            }
-            catch (Exception ex)
-            {
-                App.WriteCrashLog(ex);
-                Append(target, $"{streamName} error: {ex.Message}");
-                SetStatus("Log error");
-            }
+            GitHubStepText.Text = githubOk ? "Connected to GitHub CLI." : "Needs GitHub sign-in.";
+            GitHubStepText.Foreground = BrushFor(githubOk);
+            ModalStepText.Text = modalOk ? "Modal profile is active." : "Needs Modal setup.";
+            ModalStepText.Foreground = BrushFor(modalOk);
+            DockerStepText.Text = dockerOk ? "DockerHub secrets are ready for GitHub Actions." : "Needs DockerHub username/token saved to GitHub secrets.";
+            DockerStepText.Foreground = BrushFor(dockerOk);
+            SetupSummaryText.Text = ready
+                ? "Setup complete. The bake and deploy controls are ready."
+                : "Finish the setup steps in order. Controls unlock when GitHub, Modal, and DockerHub are ready.";
+            MainControlsPanel.IsEnabled = ready;
         });
+    }
+
+    private static bool HasDockerSecrets(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var names = doc.RootElement.EnumerateArray()
+                .Select(x => x.TryGetProperty("name", out var name) ? name.GetString() : null)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return names.Contains("DOCKERHUB_USERNAME") && names.Contains("DOCKERHUB_TOKEN");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<(int code, string output)> CaptureAsync(string fileName, string arguments, CancellationToken token)
+    {
+        var buffer = new StringBuilder();
+        var code = await RunAsync(fileName, arguments, _settings.LocalRepoPath, line => buffer.AppendLine(line), token, quiet: true, allowFailure: true);
+        return (code, buffer.ToString());
     }
 
     private async Task OpenModalUrlAsync(string label, string suffix)
@@ -530,17 +635,24 @@ public partial class MainWindow : Window
     {
         if (_busy)
         {
-            await LogAsync("Another operation is already running.");
+            await LogAsync("Another operation is already running. Use Cancel task if it is stuck.");
             return;
         }
 
         PullSettingsFromUi();
         _busy = true;
+        _operationCts = new CancellationTokenSource();
         SetStatus(status);
+        SetCancelEnabled(true);
         try
         {
-            await action(CancellationToken.None);
+            await action(_operationCts.Token);
             SetStatus("Ready");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Canceled");
+            await LogAsync("Canceled current task.");
         }
         catch (Exception ex)
         {
@@ -550,7 +662,10 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _operationCts.Dispose();
+            _operationCts = null;
             _busy = false;
+            SetCancelEnabled(false);
         }
     }
 
@@ -608,6 +723,7 @@ public partial class MainWindow : Window
                 process.Kill(entireProcessTree: true);
             throw;
         }
+
         await Task.WhenAll(stdout, stderr);
 
         if (process.ExitCode != 0 && !allowFailure)
@@ -638,6 +754,14 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ValidateDockerSettings()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.DockerUsername))
+            throw new InvalidOperationException("DockerHub username is required.");
+        if (string.IsNullOrWhiteSpace(_settings.DockerToken))
+            throw new InvalidOperationException("DockerHub token is required.");
+    }
+
     private void UpdateWatcher()
     {
         if (AutoWatchBox.IsChecked == true)
@@ -662,6 +786,16 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() => StatusText.Text = value);
     }
 
+    private void SetCancelEnabled(bool enabled)
+    {
+        Dispatcher.Invoke(() => CancelButton.IsEnabled = enabled);
+    }
+
+    private static System.Windows.Media.Brush BrushFor(bool ok)
+    {
+        return new System.Windows.Media.SolidColorBrush(ok ? System.Windows.Media.Color.FromRgb(145, 214, 180) : System.Windows.Media.Color.FromRgb(240, 179, 90));
+    }
+
     private void LogLine(string line)
     {
         Append(PipelineLogBox, line);
@@ -680,6 +814,11 @@ public partial class MainWindow : Window
             box.AppendText(line + Environment.NewLine);
             box.ScrollToEnd();
         });
+    }
+
+    private static string Fingerprint(IEnumerable<string> values)
+    {
+        return string.Join("|", values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
     }
 
     private string RepoSpecifier => $"{_settings.GitHubOwner}/{_settings.GitHubRepo}";
@@ -734,9 +873,10 @@ public sealed class PipelineSettings
     public string ModalAppName { get; set; } = "modal-comfyui";
     public string ModalVolumeName { get; set; } = "modal-comfyui-data";
     public string ModalGpu { get; set; } = "L40S";
-    public bool AutoWatch { get; set; }
+    public bool AutoWatch { get; set; } = true;
     public bool PruneDockerTags { get; set; }
     public int KeepDockerTags { get; set; } = 3;
+    public string LastBakedNodeFingerprint { get; set; } = "";
 
     public static PipelineSettings Load()
     {

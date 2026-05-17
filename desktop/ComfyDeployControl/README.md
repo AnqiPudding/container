@@ -4,7 +4,7 @@ Windows desktop control app for the Modal ComfyUI image pipeline.
 
 ## What it does
 
-- asks for DockerHub username/token and GitHub repo settings
+- guides GitHub, Modal, and DockerHub setup one step at a time
 - configures `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` GitHub Actions secrets
 - watches Modal volume custom-node changes
 - syncs runtime custom nodes into `custom_nodes_runtime`
@@ -12,8 +12,8 @@ Windows desktop control app for the Modal ComfyUI image pipeline.
 - cancels stale GitHub Actions image builds
 - starts a fresh Docker image build
 - optionally deletes old DockerHub `sha-*` tags
-- redeploys Modal with the selected GPU after the image build succeeds
-- streams live Modal app logs and ComfyUI stderr logs
+- leaves the current ComfyUI session running while the next image bakes
+- deploys Modal with the selected GPU when you choose `Deploy latest image`
 
 ## Requirements
 

@@ -9,6 +9,7 @@ COMFYUI_SESSION_PREFIX="${COMFYUI_SESSION_PREFIX:-/tmp/comfyui-manager-session}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT="${INSTALL_CUSTOM_NODE_REQUIREMENTS_ON_BOOT:-0}"
 CUSTOM_NODE_STAGING_DIR="${CUSTOM_NODE_STAGING_DIR:-${DATA_DIR}/custom_nodes_pending}"
+RUNTIME_REQUIREMENTS_MARKER_DIR="${RUNTIME_REQUIREMENTS_MARKER_DIR:-/tmp/comfyui-custom-node-requirements}"
 
 child_pid=""
 stop_requested=0
@@ -65,7 +66,8 @@ initialize_comfyui() {
   rsync -a --delete "${IMAGE_COMFYUI_DIR}/custom_nodes/" "${COMFYUI_DIR}/custom_nodes/"
   if [ -d "${CUSTOM_NODE_STAGING_DIR}" ]; then
     echo "Applying pending custom nodes from ${CUSTOM_NODE_STAGING_DIR}."
-    rsync -a --delete "${CUSTOM_NODE_STAGING_DIR}/" "${COMFYUI_DIR}/custom_nodes/"
+    rsync -a "${CUSTOM_NODE_STAGING_DIR}/" "${COMFYUI_DIR}/custom_nodes/"
+    install_custom_node_requirements "pending custom nodes"
   fi
 
   for name in models input output user; do
@@ -122,6 +124,51 @@ stage_runtime_custom_nodes() {
     "${COMFYUI_DIR}/custom_nodes/" "${CUSTOM_NODE_STAGING_DIR}/"
 }
 
+install_custom_node_requirements() {
+  local reason="${1:-custom node changes}"
+
+  if [ ! -d "${COMFYUI_DIR}/custom_nodes" ]; then
+    return 0
+  fi
+
+  python - "${COMFYUI_DIR}/custom_nodes" "${RUNTIME_REQUIREMENTS_MARKER_DIR}" "${reason}" <<'PY'
+from pathlib import Path
+import hashlib
+import subprocess
+import sys
+
+root = Path(sys.argv[1])
+marker_dir = Path(sys.argv[2])
+reason = sys.argv[3]
+marker_dir.mkdir(parents=True, exist_ok=True)
+
+requirements = sorted(root.glob("*/requirements.txt"), key=lambda p: p.as_posix().lower())
+if not requirements:
+    print(f"No custom node requirements found for {reason}.")
+    raise SystemExit(0)
+
+print(f"Checking custom node requirements for {reason}.")
+failed = []
+for req in requirements:
+    digest = hashlib.sha256(req.read_bytes()).hexdigest()
+    marker = marker_dir / f"{digest}.ok"
+    if marker.exists():
+        continue
+
+    print(f"Installing custom node requirements: {req}")
+    code = subprocess.call([sys.executable, "-m", "pip", "install", "--no-warn-conflicts", "-r", str(req)])
+    if code == 0:
+        marker.touch()
+    else:
+        failed.append(f"{req} (exit {code})")
+
+if failed:
+    print("WARNING: Some custom node requirements failed to install:", file=sys.stderr)
+    for item in failed:
+        print(f"  - {item}", file=sys.stderr)
+PY
+}
+
 repair_manager_reboot_endpoint() {
   local manager_server="${COMFYUI_DIR}/custom_nodes/comfyui-manager/glob/manager_server.py"
 
@@ -170,17 +217,15 @@ PY
 }
 
 repair_diversityboost_video_hook() {
-  local core_file="${COMFYUI_DIR}/custom_nodes/comfyui-diversityboost/core.py"
-
-  if [ ! -f "${core_file}" ]; then
-    return 0
-  fi
-
-  python - "${core_file}" <<'PY'
+  python - "${COMFYUI_DIR}/custom_nodes" <<'PY'
 from pathlib import Path
 import sys
 
-path = Path(sys.argv[1])
+root = Path(sys.argv[1])
+path = next((p for p in root.glob("*/core.py") if "diversityboost" in p.parent.name.lower()), None)
+if path is None:
+    raise SystemExit(0)
+
 text = path.read_text(encoding="utf-8")
 
 old = "coeffs = torch.randn(B, n_modes, device=device, dtype=torch.float32)"
@@ -216,6 +261,7 @@ while [ "${stop_requested}" -eq 0 ]; do
 
   if [ -f "${COMFYUI_SESSION_PREFIX}.reboot" ]; then
     stage_runtime_custom_nodes
+    install_custom_node_requirements "ComfyUI-Manager restart"
     echo "ComfyUI-Manager requested a reboot; restarting ComfyUI in this container."
   else
     echo "ComfyUI exited with code ${exit_code}; restarting in this container."
