@@ -132,7 +132,7 @@ function App() {
           <div className="eyebrow"><Zap size={16} /> Comfy Launch Control</div>
           <h1>One control room for Modal ComfyUI.</h1>
           <p>
-            Start the GPU, install nodes in ComfyUI, keep using the live session, and bake the next Docker image in the background.
+            Start one warm GPU workspace, open Jupyter or ComfyUI from it, and bake container changes into the next Docker image.
           </p>
         </motion.div>
         <CommandVisual live={status.app.live} deployed={status.app.deployed} />
@@ -185,7 +185,7 @@ function App() {
             </div>
           )}
           <div className="actions">
-            <ActionButton busy={busy === "start"} disabled={!ready || actionBusy} onClick={() => act("start", "/api/comfy/start")} icon={<Play size={18} />} label="Start GPU session" />
+            <ActionButton busy={busy === "start"} disabled={!ready || actionBusy} onClick={() => act("start", "/api/comfy/start")} icon={<Play size={18} />} label="Start GPU workspace" />
             <ActionButton busy={busy === "scale"} disabled={actionBusy} onClick={() => act("scale", "/api/comfy/scale-down")} icon={<Square size={18} />} label="Scale down now" />
             <ActionButton busy={busy === "deploy"} disabled={!ready || actionBusy} onClick={() => act("deploy", "/api/image/deploy")} icon={<Rocket size={18} />} label="Deploy latest image" />
           </div>

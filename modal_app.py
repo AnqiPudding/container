@@ -32,20 +32,6 @@ github_secret = modal.Secret.from_name(
     secrets=[github_secret],
 )
 @modal.concurrent(max_inputs=100)
-@modal.web_server(8188, startup_timeout=900, label="comfyui")
-def comfyui():
-    subprocess.Popen(["bash", "/opt/comfyui-scripts/start-comfyui.sh"])
-
-
-@app.function(
-    image=image,
-    volumes={"/data": data},
-    timeout=24 * 60 * 60,
-    max_containers=1,
-    min_containers=1,
-    scaledown_window=SCALEDOWN_WINDOW,
-)
-@modal.concurrent(max_inputs=100)
 @modal.web_server(8888, startup_timeout=180, label="jupyter")
-def jupyter():
+def workspace():
     subprocess.Popen(["bash", "/opt/comfyui-scripts/start-jupyter.sh"])

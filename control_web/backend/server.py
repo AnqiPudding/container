@@ -116,9 +116,10 @@ def endpoints() -> dict[str, str]:
     ws = workspace_name()
     if not ws:
         return {"comfyui": "", "jupyter": "", "control": ""}
+    jupyter = f"https://{ws}--jupyter.modal.run"
     return {
-        "comfyui": f"https://{ws}--comfyui.modal.run",
-        "jupyter": f"https://{ws}--jupyter.modal.run/lab?token=modal-comfyui",
+        "comfyui": f"{jupyter}/proxy/8188/?token=modal-comfyui",
+        "jupyter": f"{jupyter}/lab?token=modal-comfyui",
         "control": f"https://{ws}--control.modal.run",
     }
 
@@ -327,9 +328,9 @@ def control_worker(name: str, target: Any) -> None:
 
 def start_comfy_worker() -> None:
     if not app_deployed():
-        event("Deploying Modal app before opening ComfyUI.")
+        event("Deploying Modal GPU workspace before opening ComfyUI.")
         run(["modal", "deploy", "modal_app.py"], timeout=300)
-    event("ComfyUI endpoint is ready to open.")
+    event("ComfyUI is served from the warm Jupyter GPU workspace.")
 
 
 def deploy_worker() -> None:

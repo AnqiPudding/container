@@ -57,6 +57,7 @@ RUN pip install -r requirements.txt \
         gguf \
         matplotlib \
         jupyterlab \
+        jupyter-server-proxy \
         ipywidgets
 
 COPY comfyui-manager/ ${COMFYUI_DIR}/custom_nodes/comfyui-manager/
@@ -82,4 +83,4 @@ RUN chmod +x /opt/comfyui-scripts/*.sh
 
 EXPOSE 8188 8888
 
-CMD ["/opt/comfyui-scripts/start-comfyui.sh"]
+CMD ["/opt/comfyui-scripts/start-jupyter.sh"]
