@@ -27,6 +27,7 @@ MODAL_APP = os.environ.get("COMFY_CONTROL_MODAL_APP", "modal-comfyui")
 MODAL_VOLUME = os.environ.get("COMFY_CONTROL_MODAL_VOLUME", "modal-comfyui-data")
 IMAGE_NAME = os.environ.get("COMFY_CONTROL_IMAGE", "anqipudding/modal_comfyui:latest")
 WD14_REPO = "https://github.com/pythongosssss/ComfyUI-WD14-Tagger.git"
+MODAL_GITHUB_SECRET = "comfyui-github"
 
 app = FastAPI(title="Comfy Launch Control")
 app.add_middleware(
@@ -102,6 +103,66 @@ def docker_secrets_ok() -> bool:
     except Exception:
         return False
     return {"DOCKERHUB_USERNAME", "DOCKERHUB_TOKEN"}.issubset(names)
+
+
+def repo_info() -> tuple[str, str]:
+    code, out = capture(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"], timeout=30)
+    if code == 0:
+        try:
+            data = json.loads(out)
+            repo = str(data.get("nameWithOwner") or "").strip()
+            default_branch = (data.get("defaultBranchRef") or {}).get("name") or "main"
+            if repo:
+                branch = capture(["git", "branch", "--show-current"], timeout=15)[1].strip() or default_branch
+                return repo, branch
+        except Exception:
+            pass
+    return "AnqiPudding/container", "main"
+
+
+def modal_secret_names() -> set[str]:
+    code, out = capture(["modal", "secret", "list", "--json"], timeout=30)
+    if code != 0:
+        return set()
+    try:
+        rows = json.loads(out)
+    except Exception:
+        return set()
+    return {str(item.get("name") or item.get("Name") or "") for item in rows}
+
+
+def modal_github_secret_ok() -> bool:
+    return MODAL_GITHUB_SECRET in modal_secret_names()
+
+
+def ensure_modal_github_secret() -> None:
+    if modal_github_secret_ok():
+        return
+
+    event(f"Creating Modal secret {MODAL_GITHUB_SECRET} in the active Modal workspace.")
+    token_code, token = capture(["gh", "auth", "token"], timeout=30)
+    if token_code != 0 or not token.strip():
+        raise RuntimeError("GitHub CLI is not authenticated. Run `gh auth login`, then try again.")
+
+    repo, branch = repo_info()
+    payload = {
+        "GITHUB_TOKEN": token.strip(),
+        "GITHUB_REPOSITORY": repo,
+        "GITHUB_BRANCH": branch,
+    }
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(payload, handle)
+        secret_file = handle.name
+
+    try:
+        run(
+            ["modal", "secret", "create", MODAL_GITHUB_SECRET, "--from-json", secret_file, "--force"],
+            timeout=60,
+        )
+    finally:
+        Path(secret_file).unlink(missing_ok=True)
+
+    event(f"Modal secret {MODAL_GITHUB_SECRET} is ready for {repo}@{branch}.")
 
 
 def workspace_name() -> str:
@@ -224,6 +285,7 @@ def status() -> dict[str, Any]:
             "github": pool.submit(github_ok),
             "modal": pool.submit(modal_ok),
             "docker": pool.submit(docker_secrets_ok),
+            "modalSecret": pool.submit(modal_github_secret_ok),
             "deployed": pool.submit(app_deployed),
             "containers": pool.submit(running_containers),
         }
@@ -253,6 +315,7 @@ def status() -> dict[str, Any]:
             "github": value("github", False),
             "modal": value("modal", False),
             "dockerSecrets": value("docker", False),
+            "modalGithubSecret": value("modalSecret", False),
         },
         "app": {
             "deployed": value("deployed", False),
@@ -331,12 +394,14 @@ def control_worker(name: str, target: Any) -> None:
 def start_comfy_worker() -> None:
     if not app_deployed():
         event("Deploying Modal GPU workspace before opening ComfyUI.")
+        ensure_modal_github_secret()
         run(["modal", "deploy", "modal_app.py"], timeout=300)
     event("ComfyUI is served from the warm Jupyter GPU workspace.")
 
 
 def deploy_worker() -> None:
     event("Deploying latest Docker image to Modal.")
+    ensure_modal_github_secret()
     run(["modal", "deploy", "modal_app.py"], timeout=420)
     event("Modal app deployed with latest image.")
 
