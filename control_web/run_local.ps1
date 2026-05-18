@@ -1,5 +1,11 @@
 $ErrorActionPreference = "Stop"
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+$env:NO_COLOR = "1"
+
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Frontend = Join-Path $PSScriptRoot "frontend"
 $Backend = Join-Path $PSScriptRoot "backend"

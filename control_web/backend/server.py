@@ -69,6 +69,8 @@ def run(args: list[str], *, check: bool = True, timeout: int | None = None, inpu
         cwd=ROOT,
         input=input_text,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         timeout=timeout,
         env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "NO_COLOR": "1"},
