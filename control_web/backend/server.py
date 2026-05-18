@@ -118,8 +118,8 @@ def endpoints() -> dict[str, str]:
         return {"comfyui": "", "jupyter": "", "control": ""}
     jupyter = f"https://{ws}--jupyter.modal.run"
     return {
-        "comfyui": f"{jupyter}/proxy/8188/?token=modal-comfyui",
-        "jupyter": f"{jupyter}/lab?token=modal-comfyui",
+        "comfyui": f"{jupyter}/",
+        "jupyter": f"{jupyter}/jupyter/lab?token=modal-comfyui",
         "control": f"https://{ws}--control.modal.run",
     }
 

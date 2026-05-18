@@ -17,7 +17,7 @@ if [ -f "${BAKE_PID_FILE}" ]; then
 fi
 
 (
-  /opt/comfyui-scripts/bake-to-github.sh
+  bash /opt/comfyui-scripts/bake-to-github.sh
 ) >>"${BAKE_STATUS_FILE}" 2>&1 &
 
 new_pid="$!"

@@ -27,7 +27,7 @@ repo_dir="$(mktemp -d)"
 trap 'rm -rf "${repo_dir}"' EXIT
 
 log "Snapshotting ComfyUI runtime before bake."
-/opt/comfyui-scripts/snapshot-comfyui-state.sh
+bash /opt/comfyui-scripts/snapshot-comfyui-state.sh
 
 log "Cloning ${GITHUB_REPOSITORY}@${GITHUB_BRANCH}."
 git clone --depth=1 --branch "${GITHUB_BRANCH}" "https://x-access-token:${token}@github.com/${GITHUB_REPOSITORY}.git" "${repo_dir}"

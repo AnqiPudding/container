@@ -49,5 +49,5 @@ while true; do
   fi
 
   previous="${settled}"
-  /opt/comfyui-scripts/trigger-bake-to-github.sh "automatic runtime watcher"
+  bash /opt/comfyui-scripts/trigger-bake-to-github.sh "automatic runtime watcher"
 done

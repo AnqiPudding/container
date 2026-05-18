@@ -15,7 +15,7 @@ The app checks GitHub CLI auth, Modal CLI auth, and Docker Hub GitHub secrets be
 ## Bake flow
 
 1. Modal deploys one warm GPU workspace container for Jupyter.
-2. ComfyUI starts inside that Jupyter GPU workspace and is opened through Jupyter Server Proxy at `/proxy/8188/`.
+2. ComfyUI starts inside that Jupyter GPU workspace and is served at the workspace root. JupyterLab stays available at `/jupyter/`.
 3. Custom-node installs and editable ComfyUI runtime changes stay usable in the live workspace container.
 4. On ComfyUI-Manager restart, manual bake, or detected runtime change, the Modal container snapshots runtime state.
 5. The Modal container pushes the pending state to GitHub:

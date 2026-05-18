@@ -327,7 +327,7 @@ PY
 initialize_comfyui
 
 if [ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]; then
-  /opt/comfyui-scripts/watch-comfyui-changes.sh &
+  bash /opt/comfyui-scripts/watch-comfyui-changes.sh &
   watcher_pid="$!"
 else
   echo "GITHUB_TOKEN/GH_TOKEN is not set; automatic Docker image bake watcher is disabled."
@@ -355,11 +355,11 @@ while [ "${stop_requested}" -eq 0 ]; do
 
   if [ -f "${COMFYUI_SESSION_PREFIX}.reboot" ]; then
     wait_for_custom_nodes_to_settle
-    /opt/comfyui-scripts/snapshot-comfyui-state.sh
+    bash /opt/comfyui-scripts/snapshot-comfyui-state.sh
     remove_incomplete_custom_node_dirs "${COMFYUI_DIR}/custom_nodes"
     install_custom_node_requirements "ComfyUI-Manager restart"
     stage_runtime_custom_nodes
-    /opt/comfyui-scripts/trigger-bake-to-github.sh "ComfyUI-Manager restart"
+    bash /opt/comfyui-scripts/trigger-bake-to-github.sh "ComfyUI-Manager restart"
     echo "ComfyUI-Manager requested a reboot; restarting ComfyUI in this container."
   else
     echo "ComfyUI exited with code ${exit_code}; restarting in this container."

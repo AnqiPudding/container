@@ -56,6 +56,7 @@ RUN pip install -r requirements.txt \
         opencv-python \
         gguf \
         matplotlib \
+        aiohttp \
         jupyterlab \
         jupyter-server-proxy \
         ipywidgets
@@ -81,6 +82,6 @@ RUN mkdir -p /opt/comfyui-scripts \
 COPY scripts/ /opt/comfyui-scripts/
 RUN chmod +x /opt/comfyui-scripts/*.sh
 
-EXPOSE 8188 8888
+EXPOSE 8188 8888 8889
 
 CMD ["/opt/comfyui-scripts/start-jupyter.sh"]
