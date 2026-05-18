@@ -366,22 +366,13 @@ def cancel_active_github_build() -> None:
 
 def bake_worker(deploy_after: bool, generation: int) -> None:
     try:
-        build_state.update({"status": "syncing", "conclusion": "", "progress": 8})
+        build_state.update({"status": "triggering", "conclusion": "", "progress": 8})
         ensure_latest(generation)
-        snapshot_running_container()
-        ensure_latest(generation)
-        sync_pending_nodes_to_repo()
-        sync_pending_overlay_to_repo()
-        ensure_latest(generation)
-        commit_and_push_runtime()
-        ensure_latest(generation)
-        run_id = trigger_or_find_build()
-        wait_for_build(run_id, generation)
+        trigger_container_bake()
+        event("Container bake trigger sent. GitHub Actions will start after the container pushes its bake commit.")
+        build_state.update({"status": "triggered", "conclusion": "", "progress": 20})
         if deploy_after:
-            ensure_latest(generation)
-            event("Build finished; deploying latest image.")
-            run(["modal", "deploy", "modal_app.py"], timeout=420)
-        event("Bake finished.")
+            event("Deploy-after-build is now handled manually after the GitHub build reports success.")
     except CancelledBake:
         event("Older bake trigger was replaced by a newer one.")
     except Exception as exc:
@@ -396,6 +387,14 @@ def snapshot_running_container() -> None:
         return
     event(f"Snapshotting runtime custom nodes from {ids[0]}.")
     run(["modal", "container", "exec", ids[0], "--", "bash", "/opt/comfyui-scripts/snapshot-comfyui-state.sh"], timeout=180)
+
+
+def trigger_container_bake() -> None:
+    ids = running_containers()
+    if not ids:
+        raise RuntimeError("No running Modal container found. Open/start ComfyUI first, then bake the live runtime.")
+    event(f"Triggering GitHub bake from Modal container {ids[0]}.")
+    run(["modal", "container", "exec", ids[0], "--", "bash", "/opt/comfyui-scripts/trigger-bake-to-github.sh", "manual web bake"], timeout=120)
 
 
 def sync_pending_nodes_to_repo() -> None:

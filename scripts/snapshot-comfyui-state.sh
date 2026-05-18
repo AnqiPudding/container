@@ -5,6 +5,7 @@ COMFYUI_DIR="${RUNTIME_COMFYUI_DIR:-/tmp/ComfyUI}"
 DATA_DIR="${DATA_DIR:-/data}"
 CUSTOM_NODE_STAGING_DIR="${CUSTOM_NODE_STAGING_DIR:-${DATA_DIR}/custom_nodes_pending}"
 RUNTIME_OVERLAY_STAGING_DIR="${RUNTIME_OVERLAY_STAGING_DIR:-${DATA_DIR}/comfyui_overlay_pending}"
+BASE_REQUIREMENTS_FILE="${BASE_REQUIREMENTS_FILE:-/opt/comfyui-scripts/base-python-packages.txt}"
 CUSTOM_NODE_SETTLE_ATTEMPTS="${CUSTOM_NODE_SETTLE_ATTEMPTS:-10}"
 CUSTOM_NODE_SETTLE_SECONDS="${CUSTOM_NODE_SETTLE_SECONDS:-2}"
 
@@ -99,3 +100,51 @@ rsync -a --delete \
   "${COMFYUI_DIR}/" "${RUNTIME_OVERLAY_STAGING_DIR}/"
 
 echo "Saved runtime ComfyUI overlay to ${RUNTIME_OVERLAY_STAGING_DIR}."
+
+if [ -f "${BASE_REQUIREMENTS_FILE}" ]; then
+  python - "${BASE_REQUIREMENTS_FILE}" "${RUNTIME_OVERLAY_STAGING_DIR}/.modal-runtime-requirements.txt" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+base_path = Path(sys.argv[1])
+out_path = Path(sys.argv[2])
+
+def package_name(line: str) -> str | None:
+    line = line.strip()
+    if not line or line.startswith("#") or line.startswith("-e "):
+        return None
+    match = re.match(r"^([A-Za-z0-9_.-]+)\s*(?:==| @ |===|>=|<=|~=|!=|>|<)", line)
+    if match:
+        return match.group(1).lower().replace("_", "-")
+    return None
+
+base = {}
+for raw in base_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+    name = package_name(raw)
+    if name:
+        base[name] = raw.strip()
+
+freeze = subprocess.check_output([sys.executable, "-m", "pip", "freeze", "--all"], text=True)
+changed = []
+for raw in sorted(freeze.splitlines(), key=str.lower):
+    name = package_name(raw)
+    if not name:
+        continue
+    line = raw.strip()
+    if base.get(name) != line:
+        changed.append(line)
+
+if changed:
+    out_path.write_text("\n".join(changed) + "\n", encoding="utf-8")
+    print(f"Saved runtime Python package delta to {out_path}.")
+elif out_path.exists():
+    out_path.unlink()
+    print(f"Removed empty runtime Python package delta at {out_path}.")
+else:
+    print("No runtime Python package changes found.")
+PY
+else
+  echo "Base Python package snapshot is missing; skipping runtime package delta."
+fi

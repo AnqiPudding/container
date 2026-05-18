@@ -67,11 +67,15 @@ COPY custom_nodes_runtime/ ${COMFYUI_DIR}/custom_nodes/
 RUN for req in custom_nodes/*/requirements.txt; do \
         if [ -f "${req}" ]; then pip install --no-warn-conflicts -r "${req}"; fi; \
     done \
+    && if [ -f ".modal-runtime-requirements.txt" ]; then pip install --no-warn-conflicts -r ".modal-runtime-requirements.txt"; fi \
     && pip install --no-warn-conflicts "decorator>=5.1.0" \
     && for file in custom-node-list.json extension-node-map.json model-list.json alter-list.json github-stats.json; do \
         wget -q -O "custom_nodes/comfyui-manager/${file}" "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/${file}"; \
     done \
     && find custom_nodes -type d -name "__pycache__" -prune -exec rm -rf {} +
+
+RUN mkdir -p /opt/comfyui-scripts \
+    && pip freeze --all | sort -f > /opt/comfyui-scripts/base-python-packages.txt
 
 COPY scripts/ /opt/comfyui-scripts/
 RUN chmod +x /opt/comfyui-scripts/*.sh

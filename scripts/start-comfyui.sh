@@ -15,10 +15,15 @@ CUSTOM_NODE_SETTLE_ATTEMPTS="${CUSTOM_NODE_SETTLE_ATTEMPTS:-10}"
 CUSTOM_NODE_SETTLE_SECONDS="${CUSTOM_NODE_SETTLE_SECONDS:-2}"
 
 child_pid=""
+watcher_pid=""
 stop_requested=0
 
 stop_comfyui() {
   stop_requested=1
+  if [ -n "${watcher_pid}" ] && kill -0 "${watcher_pid}" 2>/dev/null; then
+    kill "${watcher_pid}" 2>/dev/null || true
+    wait "${watcher_pid}" 2>/dev/null || true
+  fi
   if [ -n "${child_pid}" ] && kill -0 "${child_pid}" 2>/dev/null; then
     kill "${child_pid}" 2>/dev/null || true
     wait "${child_pid}" 2>/dev/null || true
@@ -85,6 +90,11 @@ initialize_comfyui() {
       --exclude "/notebooks/" \
       --exclude "/user/default/workflows/" \
       "${RUNTIME_OVERLAY_STAGING_DIR}/" "${COMFYUI_DIR}/"
+  fi
+
+  if [ -f "${COMFYUI_DIR}/.modal-runtime-requirements.txt" ]; then
+    echo "Installing baked runtime Python package delta."
+    pip install --no-warn-conflicts -r "${COMFYUI_DIR}/.modal-runtime-requirements.txt"
   fi
 
   for name in models input output user; do
@@ -316,6 +326,13 @@ PY
 
 initialize_comfyui
 
+if [ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]; then
+  /opt/comfyui-scripts/watch-comfyui-changes.sh &
+  watcher_pid="$!"
+else
+  echo "GITHUB_TOKEN/GH_TOKEN is not set; automatic Docker image bake watcher is disabled."
+fi
+
 while [ "${stop_requested}" -eq 0 ]; do
   rm -f "${COMFYUI_SESSION_PREFIX}.reboot"
   echo "Starting ComfyUI on port ${COMFYUI_PORT}."
@@ -342,6 +359,7 @@ while [ "${stop_requested}" -eq 0 ]; do
     remove_incomplete_custom_node_dirs "${COMFYUI_DIR}/custom_nodes"
     install_custom_node_requirements "ComfyUI-Manager restart"
     stage_runtime_custom_nodes
+    /opt/comfyui-scripts/trigger-bake-to-github.sh "ComfyUI-Manager restart"
     echo "ComfyUI-Manager requested a reboot; restarting ComfyUI in this container."
   else
     echo "ComfyUI exited with code ${exit_code}; restarting in this container."
